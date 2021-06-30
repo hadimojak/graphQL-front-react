@@ -57,7 +57,7 @@ class Feed extends Component {
     const graphqlQuery = {
       query: `
         {
-          posts{
+          posts(page: ${page}) {
             posts {
               _id
               title
@@ -85,7 +85,7 @@ class Feed extends Component {
       })
       .then((resData) => {
         if (resData.errors) {
-          throw new Error("fetching posts failed");
+          throw new Error("Fetching posts failed!");
         }
         this.setState({
           posts: resData.data.posts.posts.map((post) => {
@@ -149,35 +149,47 @@ class Feed extends Component {
       editLoading: true,
     });
     const formData = new FormData();
-    formData.append("title", postData.title);
-    formData.append("content", postData.content);
     formData.append("image", postData.image);
-
-    let graphqlQuery = {
-      query: `
-        mutation {
-          createPost(postInput: {title: "${postData.title}", content: "${postData.content}", imageUrl: "some url"}) {
-            _id
-            title
-            content
-            imageUrl
-            creator {
-              name
-            }
-            createdAt
-          }
-        }
-      `,
-    };
-
-    fetch("http://localhost:8080/graphql", {
-      method: "POST",
-      body: JSON.stringify(graphqlQuery),
+    if (this.state.editPost) {
+      formData.append("oldPath", this.state.editPost.imagePath);
+    }
+    fetch("http://localhost:8080/post-image", {
+      method: "PUT",
       headers: {
         Authorization: "Bearer " + this.props.token,
-        "Content-Type": "application/json",
       },
+      body: formData,
     })
+      .then((res) => res.json())
+      .then((fileResData) => {
+        let imageUrl = fileResData.filePath;
+        imageUrl = 'images/'+imageUrl.split('\\')[1];
+        let graphqlQuery = {
+          query: `
+          mutation {
+            createPost(postInput: {title: "${postData.title}", content: "${postData.content}", imageUrl: "${imageUrl}"}) {
+              _id
+              title
+              content
+              imageUrl
+              creator {
+                name
+              }
+              createdAt
+            }
+          }
+        `,
+        };
+
+        return fetch("http://localhost:8080/graphql", {
+          method: "POST",
+          body: JSON.stringify(graphqlQuery),
+          headers: {
+            Authorization: "Bearer " + this.props.token,
+            "Content-Type": "application/json",
+          },
+        });
+      })
       .then((res) => {
         return res.json();
       })
@@ -188,6 +200,7 @@ class Feed extends Component {
           );
         }
         if (resData.errors) {
+          console.log(resData.errors)
           throw new Error("User login failed!");
         }
         console.log(resData);
@@ -197,6 +210,7 @@ class Feed extends Component {
           content: resData.data.createPost.content,
           creator: resData.data.createPost.creator,
           createdAt: resData.data.createPost.createdAt,
+          imagePath: resData.data.createPost.imageUrl,
         };
         this.setState((prevState) => {
           let updatedPosts = [...prevState.posts];
@@ -206,6 +220,7 @@ class Feed extends Component {
             );
             updatedPosts[postIndex] = post;
           } else {
+            updatedPosts.pop();
             updatedPosts.unshift(post);
           }
           return {
